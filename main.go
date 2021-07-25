@@ -2,60 +2,51 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"log"
 	"net/http"
-	"time"
+	"sort"
 )
 
-var MaxWorkers int
-var Queue []*Task
-var workerChan = make(chan *Task, MaxWorkers)
+var pool *PoolWorkers
+var taskId = 1
 
-type TaskStatus int
+func main() {
+	err := appRun()
 
-func (d TaskStatus) String() string {
-	return [...]string{"UNDEFINED", "WAITING", "PROCESSING", "DONE"}[d]
-}
-
-const (
-	Wait TaskStatus = iota + 1
-	Process
-	Done
-)
-
-type Task struct {
-	QueuePosition    int
-	Status           TaskStatus
-	ElementAmount    int     `json:"element_amount"`
-	Delta            float32 `json:"delta"`
-	FirstElement     float32 `json:"first_element"`
-	Interval         float32 `json:"interval"`
-	TTL              float32 `json:"ttl"`
-	CurrentIteration int
-	EnqueueTime      string
-	StartTime        string
-	DoneTime         string
-}
-
-func WorkersRun(maxWorkers int) {
-	for i := 0; i < maxWorkers; i++ {
-		fmt.Printf("Worker %d started", i+1)
-		go Worker()
+	if err != nil {
+		log.Fatal(err.Error())
 	}
 }
 
-func Worker() {
-	for t := range workerChan {
-		t.Status = 2
-		t.StartTime = time.Now().Format(time.Stamp)
-		log.Println(t)
+func appRun() error {
+	var maxWorkers int
+
+	flag.IntVar(&maxWorkers, "N", 1, "max workers at the same time")
+	flag.Parse()
+
+	if maxWorkers < 1 {
+		return fmt.Errorf("count of workers should be more than zero")
 	}
+
+	pool = NewPoolWorkers(maxWorkers)
+	pool.WorkersRun()
+
+	http.HandleFunc("/api/v1/task", taskProcess)
+
+	fmt.Printf("Starting server at port 8080\n")
+	err := http.ListenAndServe(":8080", nil)
+
+	if err != nil {
+		return err
+	}
+
+	return nil
 }
 
 func taskProcess(w http.ResponseWriter, r *http.Request) {
-
 	if r.URL.Path != "/api/v1/task" {
 		http.Error(w, "404 not found.", http.StatusNotFound)
 		return
@@ -63,7 +54,31 @@ func taskProcess(w http.ResponseWriter, r *http.Request) {
 
 	switch r.Method {
 	case "GET":
+		result := make([]Task, 0)
+		var fulfilled []Task
 
+		for _, v := range pool.TaskHistory {
+			if v.Status == DONE {
+				fulfilled = append(fulfilled, *v)
+			}
+
+			if v.Status != DONE {
+				result = append(result, *v)
+			}
+		}
+
+		sort.Slice(result, func(i, j int) bool {
+			return result[i].QueuePosition < result[j].QueuePosition
+		})
+
+		sort.Slice(fulfilled, func(i, j int) bool {
+			return fulfilled[i].EnqueueTime < fulfilled[j].EnqueueTime
+		})
+
+		result = append(result, fulfilled...)
+
+		w.Header().Add("content-type", "application/json")
+		json.NewEncoder(w).Encode(result)
 	case "POST":
 		var task Task
 
@@ -73,35 +88,29 @@ func taskProcess(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		Queue = append(Queue, &task)
-
-		task.QueuePosition = len(Queue)
-		task.Status = 1
-		task.EnqueueTime = time.Now().Format(time.Stamp)
-
-		for _, t := range Queue {
-			if t.Status == 1 {
-				workerChan <- t
-			}
+		if task.ElementAmount < 1 {
+			err := errors.New("numbers of elements should be at least one")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
 		}
 
+		if task.Interval < 0 {
+			err := errors.New("interval should be more than zero")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if task.TTL < 0 {
+			err := errors.New("lifetime shouldn't be negative")
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		pool.Enqueue(&task)
+
+		w.WriteHeader(http.StatusOK)
+		w.Write([]byte("Task queued successfully."))
 	default:
 		fmt.Fprintf(w, "Only GET and POST methods are supported.")
 	}
-}
-
-func main() {
-	flag.IntVar(&MaxWorkers, "N", 1, "max workers at the same time")
-	flag.Parse()
-
-	if MaxWorkers < 1 {
-		log.Fatal("Count of workers should be more than zero")
-	}
-
-	WorkersRun(MaxWorkers)
-
-	http.HandleFunc("/api/v1/task", taskProcess)
-
-	fmt.Printf("Starting server at port 8080\n")
-	log.Fatal(http.ListenAndServe(":8080", nil))
 }
