@@ -16,7 +16,8 @@ At the same time can be processing only a pointed number of tasks.**
 
 - **Enqueue a task**\
   **POST** `/api/v1/task`\
-  Body: `{ "element_amount": 10, "delta": -2.784, "first_element": 12.4589, "interval": 0.547, "ttl": 500000 }`\
+  Body:\
+  `{ "element_amount": 10, "delta": -2.784, "first_element": 12.4589, "interval": 0.547, "ttl": 500000 }`\
   Where:\
   `element_amount` - count of elements in progression(integer);\
   `delta` - step value between elements(float);\
