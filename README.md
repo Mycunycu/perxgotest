@@ -2,7 +2,7 @@
 
 #### The service for calculating sum all elements arithmetic progression.
 
-**Tasks are executed from the queue.
+**Tasks are executed from the queue.\
 Lifecycle a task: task -> queue -> processing -> tasks history.
 At the same time can be processing only a pointed number of tasks.**
 
