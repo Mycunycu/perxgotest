@@ -32,7 +32,16 @@ type Task struct {
 	DoneTime         string  `json:"done_time,omitempty"`
 }
 
-type PoolWorkers struct {
+type PoolWorkers interface {
+	WorkersRun()
+	Worker(context.Context)
+	Enqueue(*Task)
+	Dequeue(int)
+	RemoveTaskHistory(int)
+	SyncQueuePosition()
+}
+
+type Pool struct {
 	TaskId      int
 	MaxWorkers  int
 	Queue       *list.List
@@ -41,8 +50,8 @@ type PoolWorkers struct {
 	wg          *sync.WaitGroup
 }
 
-func NewPoolWorkers(maxWorkers int) *PoolWorkers {
-	return &PoolWorkers{
+func NewPool(maxWorkers int) *Pool {
+	return &Pool{
 		MaxWorkers:  maxWorkers,
 		Queue:       list.New(),
 		TaskHistory: make(map[int]*Task),
@@ -51,7 +60,7 @@ func NewPoolWorkers(maxWorkers int) *PoolWorkers {
 	}
 }
 
-func (pw *PoolWorkers) WorkersRun() {
+func (pw *Pool) WorkersRun() {
 	ctx, _ := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGINT, syscall.SIGTERM)
 
 	for i := 0; i < pw.MaxWorkers; i++ {
@@ -61,13 +70,13 @@ func (pw *PoolWorkers) WorkersRun() {
 	}
 
 	go func() {
-		pool.wg.Wait()
+		pw.wg.Wait()
 		fmt.Print("Graceful shutdown (:")
 		os.Exit(0)
 	}()
 }
 
-func (pw *PoolWorkers) Worker(ctx context.Context) {
+func (pw *Pool) Worker(ctx context.Context) {
 	for {
 		select {
 		case <-ctx.Done():
@@ -106,7 +115,7 @@ func (pw *PoolWorkers) Worker(ctx context.Context) {
 	}
 }
 
-func (pw *PoolWorkers) Enqueue(task *Task) {
+func (pw *Pool) Enqueue(task *Task) {
 	task.id = taskId
 	taskId++
 
@@ -124,7 +133,7 @@ func (pw *PoolWorkers) Enqueue(task *Task) {
 	}()
 }
 
-func (pw *PoolWorkers) Dequeue(id int) {
+func (pw *Pool) Dequeue(id int) {
 	fmt.Printf("Dequeue Task with id: %d\n", id)
 
 	for e := pw.Queue.Front(); e != nil; e = e.Next() {
@@ -138,12 +147,12 @@ func (pw *PoolWorkers) Dequeue(id int) {
 	task.QueuePosition = 0
 }
 
-func (pw *PoolWorkers) RemoveTaskHistory(id int) {
+func (pw *Pool) RemoveTaskHistory(id int) {
 	fmt.Printf("Removing Task with id: %d from history by lifetime", id)
 	delete(pw.TaskHistory, id)
 }
 
-func (pw *PoolWorkers) SyncQueuePosition() {
+func (pw *Pool) SyncQueuePosition() {
 	position := 1
 
 	for e := pw.Queue.Front(); e != nil; e = e.Next() {

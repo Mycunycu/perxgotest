@@ -10,7 +10,7 @@ import (
 	"sort"
 )
 
-var pool *PoolWorkers
+var pool *Pool
 var taskId = 1
 
 func main() {
@@ -31,7 +31,7 @@ func appRun() error {
 		return fmt.Errorf("count of workers should be more than zero")
 	}
 
-	pool = NewPoolWorkers(maxWorkers)
+	pool = NewPool(maxWorkers)
 	pool.WorkersRun()
 
 	http.HandleFunc("/api/v1/task", taskProcess)
