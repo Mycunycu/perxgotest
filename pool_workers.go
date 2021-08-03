@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"sync"
+	"sync/atomic"
 	"syscall"
 	"time"
 )
@@ -18,7 +19,7 @@ const (
 )
 
 type Task struct {
-	id               int
+	id               uint64
 	QueuePosition    int     `json:"queue_position,omitempty"`
 	Status           string  `json:"status"`
 	ElementAmount    int     `json:"element_amount"`
@@ -45,7 +46,7 @@ type Pool struct {
 	TaskId      int
 	MaxWorkers  int
 	Queue       *list.List
-	TaskHistory map[int]*Task
+	TaskHistory map[uint64]*Task
 	TaskChan    chan *Task
 	wg          *sync.WaitGroup
 }
@@ -54,7 +55,7 @@ func NewPool(maxWorkers int) *Pool {
 	return &Pool{
 		MaxWorkers:  maxWorkers,
 		Queue:       list.New(),
-		TaskHistory: make(map[int]*Task),
+		TaskHistory: make(map[uint64]*Task),
 		TaskChan:    make(chan *Task, maxWorkers),
 		wg:          &sync.WaitGroup{},
 	}
@@ -117,7 +118,7 @@ func (pw *Pool) Worker(ctx context.Context) {
 
 func (pw *Pool) Enqueue(task *Task) {
 	task.id = taskId
-	taskId++
+	atomic.AddUint64(&taskId, 1)
 
 	fmt.Printf("Enqueue Task with id: %d\n", task.id)
 
@@ -133,11 +134,11 @@ func (pw *Pool) Enqueue(task *Task) {
 	}()
 }
 
-func (pw *Pool) Dequeue(id int) {
+func (pw *Pool) Dequeue(id uint64) {
 	fmt.Printf("Dequeue Task with id: %d\n", id)
 
 	for e := pw.Queue.Front(); e != nil; e = e.Next() {
-		if e.Value.(int) == id {
+		if e.Value.(uint64) == id {
 			pw.Queue.Remove(e)
 			continue
 		}
@@ -147,7 +148,7 @@ func (pw *Pool) Dequeue(id int) {
 	task.QueuePosition = 0
 }
 
-func (pw *Pool) RemoveTaskHistory(id int) {
+func (pw *Pool) RemoveTaskHistory(id uint64) {
 	fmt.Printf("Removing Task with id: %d from history by lifetime", id)
 	delete(pw.TaskHistory, id)
 }
@@ -156,7 +157,7 @@ func (pw *Pool) SyncQueuePosition() {
 	position := 1
 
 	for e := pw.Queue.Front(); e != nil; e = e.Next() {
-		id := e.Value.(int)
+		id := e.Value.(uint64)
 		task, ok := pw.TaskHistory[id]
 
 		if !ok {

@@ -11,7 +11,7 @@ import (
 )
 
 var pool *Pool
-var taskId = 1
+var taskId uint64 = 1
 
 func main() {
 	err := appRun()
