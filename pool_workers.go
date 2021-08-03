@@ -49,6 +49,7 @@ type Pool struct {
 	TaskHistory map[uint64]*Task
 	TaskChan    chan *Task
 	wg          *sync.WaitGroup
+	mu          *sync.Mutex
 }
 
 func NewPool(maxWorkers int) *Pool {
@@ -58,6 +59,7 @@ func NewPool(maxWorkers int) *Pool {
 		TaskHistory: make(map[uint64]*Task),
 		TaskChan:    make(chan *Task, maxWorkers),
 		wg:          &sync.WaitGroup{},
+		mu:          &sync.Mutex{},
 	}
 }
 
@@ -122,7 +124,10 @@ func (pw *Pool) Enqueue(task *Task) {
 
 	fmt.Printf("Enqueue Task with id: %d\n", task.id)
 
+	pw.mu.Lock()
 	pw.Queue.PushBack(task.id)
+	pw.mu.Unlock()
+
 	pw.TaskHistory[task.id] = task
 
 	task.QueuePosition = pw.Queue.Len()
@@ -139,7 +144,9 @@ func (pw *Pool) Dequeue(id uint64) {
 
 	for e := pw.Queue.Front(); e != nil; e = e.Next() {
 		if e.Value.(uint64) == id {
+			pw.mu.Lock()
 			pw.Queue.Remove(e)
+			pw.mu.Unlock()
 			continue
 		}
 	}
